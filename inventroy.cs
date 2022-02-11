@@ -5,7 +5,8 @@ cargoContainer alpha_4_container;
 cargoContainer alpha_5_container;
 cargoContainer alpha_6_container;
 cargoContainer alpha_7_container;
-
+//IMyTextPanel alpha_cargo_display;
+IMyTextSurfaceProvider seat;
 
 public Program() {
 	alpha_1_container = new cargoContainer(this);
@@ -19,15 +20,28 @@ public Program() {
 
 
 
-public void Main(string argument) {
+public void Main(string argument, UpdateType updateType) {
+	Runtime.UpdateFrequency = UpdateFrequency.Update100;
+	//alpha_cargo_display = GridTerminalSystem.GetBlockWithName("Alpha Cargo Display") as IMyTextPanel;
+	seat = GridTerminalSystem.GetBlockWithName("Crane Control Seat") as IMyTextSurfaceProvider;
+	IMyTextSurface seat_large_display = seat.GetSurface(0);
 
-	Echo("A1: " + findConnected("1") + " " + printCargoPerc("1"));
-	Echo("A2: " + findConnected("2") + " " + printCargoPerc("2"));
-	Echo("A3: " + findConnected("3") + " " + printCargoPerc("3"));
-	Echo("A4: " + findConnected("4") + " " + printCargoPerc("4"));
-	Echo("A5: " + findConnected("5") + " " + printCargoPerc("5"));
-	Echo("A6: " + findConnected("6") + " " + printCargoPerc("6"));
-	Echo("A7: " + findConnected("7") + " " + printCargoPerc("7"));
+
+
+	string screen_output = "CURRENT CONTAINERS CONNECTED:" + "\n" +
+	"A1: " + findConnected("1") + " " + printCargoPerc("1") + "\n" + 
+	"A2: " + findConnected("2") + " " + printCargoPerc("2") + "\n" +
+	"A3: " + findConnected("3") + " " + printCargoPerc("3") + "\n" +
+	"A4: " + findConnected("4") + " " + printCargoPerc("4") + "\n" +
+	"A5: " + findConnected("5") + " " + printCargoPerc("5") + "\n" +
+	"A6: " + findConnected("6") + " " + printCargoPerc("6") + "\n" +
+	"A7: " + findConnected("7") + " " + printCargoPerc("7");
+
+	//alpha_cargo_display.WriteText(screen_output);
+	seat_large_display.WriteText(screen_output);
+	
+	
+
 }
 
 public string printCargoPerc(string nr) {

@@ -4,26 +4,52 @@ public IMyPistonBase piston_Out_1;
 public IMyPistonBase piston_Out_2;
 public IMyMotorStator main_Rotor;
 public IMyMotorStator fine_Rotor;
+public IMyTextSurfaceProvider seat;
+public IMyTextSurface seat_display_3;
+public IMyTextSurface seat_display_2;
+public IMyTextSurface seat_display_1;
+public IMyTextSurface seat_display_4;
+
+
 // global variables
 public double up_dist; // distance in meters above lowest possible position of UP pistons, 0 - 20 max
 public double out_dist; // distance in meters to extend OUT pistons, 0 - 20 max
 public double rotor_angle; // turning the crane itself
-public int X; //Grid coordinate
-public int Y; //Grid coordinate
+public double X; //Grid coordinate
+public double Y; //Grid coordinate
+public double curr_X; //Grid coordinate
+public double curr_Y; //Grid coordinate
+public string curr_fineDirection;
 public double fine_rotor_angle; // Finetuning the cargo angle at the front of the crane independently of the crane itself
 public string crane_name;
 	public string crane; // input args
 	public string up;
 	public string grid;
 	public string fine;
+	public string adj;
+	public bool save_grid;
+	public string storedData;
+	public string saved_grid = "";
+
+
+public void Save() {
+	Storage = saved_grid;
+}
+
 
 public void Main(string argument) {
 	
 
 	parseArgs(argument);
-	
-	//string crane = "alpha", string up = "curr", string grid = "curr", string fine = "curr"
-	
+
+	seat = GridTerminalSystem.GetBlockWithName("Crane Control Seat") as IMyTextSurfaceProvider;
+	seat_display_2 = seat.GetSurface(2);
+	seat_display_3 = seat.GetSurface(3);
+	seat.GetSurface(1).WriteText("1");
+
+
+	seat.GetSurface(4).WriteText("4");
+
 	
 	if (crane == "alpha") {
 		crane_name = "Alpha";
@@ -43,10 +69,42 @@ public void Main(string argument) {
 	}
 	
 	if (grid != "curr") {
+		if (grid == "save") {
+			getCurrentPos();
+			saved_grid = string.Join(";", curr_X, curr_Y, curr_fineDirection);
+		}
+		
+		if (grid == "clear") {
+			saved_grid = "";
+			storedData = "";
+		}
+		
+		if (grid == "load") {
+			string[] storedData = saved_grid.Split(';');
+			X = Convert.ToSingle(storedData[0]);
+			Y = Convert.ToSingle(storedData[1]);
+			fine = storedData[2];
+		
+			calculateGridCoordinates(X, Y); // sets rotor_angle and out_dist
+			moveOutPistons(out_dist);
+			moveRotor(rotor_angle);
+		}
+		
+		if (grid.Any(c => char.IsDigit(c))) {
+		
 		convertNWSEtoGrid(grid); // Sets X and Y
 		calculateGridCoordinates(X, Y); // sets rotor_angle and out_dist
 		moveOutPistons(out_dist);
 		moveRotor(rotor_angle);
+		}
+	}
+
+	
+	
+	if (adj != "curr") {
+		adjustPosition(adj);
+		calculateFineAngle(fine, rotor_angle); // Set fine_rotor_angle
+		moveFineRotor(fine_rotor_angle);
 	}
 	
 	if (fine != "curr") {
@@ -61,6 +119,10 @@ public void Main(string argument) {
 			moveFineRotor(fine_rotor_angle);
 		}
 	}
+	
+
+	
+	//seat_display_2.WriteText("Saved:" + "\n" + pickup_grid);
 
 }
 
@@ -88,6 +150,13 @@ public void parseArgs(string argument) {
 		fine = args_fine[0].Groups[1].Value;
 	}
 	
+	var args_adj = System.Text.RegularExpressions.Regex.Matches(argument, "adj\\s(.{1,2})");
+	if (args_adj.Count == 0) {
+		adj = "curr";
+	} else {
+		adj = args_adj[0].Groups[1].Value;		
+	}
+	
 	
 }
 
@@ -101,7 +170,6 @@ public void convertNWSEtoGrid(string argument) {
 			Y = -Y; // If South then Y direction coords are negative
 	}
 	
-	Echo("X" + X.ToString());
 	
 	System.Text.RegularExpressions.Regex pattern_EW = new System.Text.RegularExpressions.Regex("([EWew])(\\d{1,2})"); //Same with East West
 	var rx_EW = pattern_EW.Matches(argument);
@@ -109,11 +177,17 @@ public void convertNWSEtoGrid(string argument) {
 	if (rx_EW[0].Groups[1].Value == "W" | rx_EW[0].Groups[1].Value == "w") {
 		X = -X; // West is the negative x direcion
 	}
-	Echo("Y" + Y.ToString());
 	
+	// output input coordinates to the control seat screen. .Groups[0] returns the whole match without groups
+	string grid_string = rx_NS[0].Groups[0].Value + "\n" + rx_EW[0].Groups[0].Value;
+	seat_display_3.WriteText("Target:" + "\n" + grid_string);
+	
+	if (save_grid == true) {
+		//pickup_grid = grid_string;
+	}
 }
 
-public void calculateGridCoordinates(int X, int Y) {
+public void calculateGridCoordinates(double X, double Y) {
 	// Calculate hypothenuse of triangle given by crane base (0,0) and the target grid position (X, Y)
 	double X2 = Math.Pow(X,2);
 	double Y2 = Math.Pow(Y,2);
@@ -153,6 +227,82 @@ public void calculateFineAngle(string direction, double target_angle) {
 	if (direction == "W") {
 		fine_rotor_angle = fine_East - 180;
 	}
+}
+
+public void getCurrentPos() {
+	// Get current X and Y positions by reading the piston extension and angle and using the inverse of the calculation in calculateGridCoordinates to find _X and _Y current coords
+	double currentOut = piston_Out_1.CurrentPosition;
+	currentOut = currentOut * 2; // Both pistons are moved together so always have the same extension
+   	double currentAngleRad = main_Rotor.Angle; 
+	double currentAngleDeg = currentAngleRad * 180 / 3.1415; 	
+	double currentFineAngleRad = fine_Rotor.Angle;
+	double currentFineAngleDeg = currentFineAngleRad * 180 / 3.1415;
+	
+	double _hypothenuse = (currentOut + 0.2 + 12.5) / 2.5;
+	curr_X = Math.Round(Math.Cos(-currentAngleRad) * _hypothenuse, 1);
+	curr_Y = Math.Round(Math.Sin(-currentAngleRad) * _hypothenuse, 1);
+	
+
+	
+	if (closeDeg(-currentAngleDeg - currentFineAngleDeg)) {
+	curr_fineDirection = "E"; }
+	if (closeDeg((-currentAngleDeg + 90) - currentFineAngleDeg)) {
+	curr_fineDirection = "N"; }
+	if (closeDeg((-currentAngleDeg - 90) - currentFineAngleDeg)) {
+	curr_fineDirection = "S"; }
+	if (closeDeg((-currentAngleDeg + 180) - currentFineAngleDeg) | closeDeg((currentAngleDeg - 180) - currentFineAngleDeg)) {
+	curr_fineDirection = "W"; }
+	
+}
+
+public bool closeDeg(double A) {
+		if (A > -2 && A < 2) {
+			return true;
+		} else {return false;}
+}
+		
+public void adjustPosition(string adj) {
+	
+	getCurrentPos(); //Sets curr_X and curr_Y
+	
+	if (adj == "N") {
+		X = curr_X;
+		Y = curr_Y + 0.1;
+	}
+		if (adj == "NE") {
+		X = curr_X + 0.1;
+		Y = curr_Y + 0.1;
+	}
+		if (adj == "E") {
+		X = curr_X + 0.1;
+		Y = curr_Y;
+	}
+	if (adj == "SE") {
+		X = curr_X + 0.1;
+		Y = curr_Y - 0.1;
+	}
+		if (adj == "S") {
+		X = curr_X;
+		Y = curr_Y - 0.1;
+	}
+		if (adj == "SW") {
+		X = curr_X - 0.1;
+		Y = curr_Y - 0.1;
+	}
+	if (adj == "W") {
+		X = curr_X - 0.1;
+		Y = curr_Y;
+	}
+	if (adj == "NW") {
+		X = curr_X - 0.1;
+		Y = curr_Y + 0.1;
+	}
+	calculateGridCoordinates(X, Y);
+	moveOutPistons(out_dist);
+	moveRotor(rotor_angle);
+	Echo(curr_fineDirection);
+	calculateFineAngle(curr_fineDirection, rotor_angle); // Set fine_rotor_angle
+	moveFineRotor(fine_rotor_angle);
 }
 
 public void moveUpPistons(double targetUp) {
