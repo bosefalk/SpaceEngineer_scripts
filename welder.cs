@@ -2,7 +2,7 @@
 
 
 // Declare variables: welder, sorter, piston
-//public IMyPistonBase piston;
+public IMyPistonBase piston;
 public IMyShipWelder welder;
 //public IMyPistonBase sorter;
 public IMyInventory welder_inventory;
@@ -19,6 +19,7 @@ public void Main(string argument) {
 
 	welder = GridTerminalSystem.GetBlockWithName("Welder") as IMyShipWelder;
 	welder_inventory = welder.GetInventory();
+	piston = GridTerminalSystem.GetBlockWithName("Welder Piston") as IMyPistonBase;
 	
 	/*
 	List<MyInventoryItem> itemList = new List<MyInventoryItem>();
@@ -130,7 +131,16 @@ public void Main(string argument) {
 	
 	
 	if (stage_retracting_piston) {
-		Echo("Start retracting piston");
+		if (welder.Enabled == false) {
+		welder.Enabled = true;
+		}
+		piston.Velocity = -0.05f;
+		piston.Retract();
+		if (piston.CurrentPosition < 0.1) {
+				welder.Enabled = false;
+				stage_retracting_piston = false;
+				stage_finished_constructing = true;
+		}
 	}
 	
 	
