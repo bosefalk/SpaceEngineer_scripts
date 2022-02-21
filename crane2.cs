@@ -4,6 +4,8 @@ public IMyPistonBase piston_Out_1;
 public IMyPistonBase piston_Out_2;
 public IMyMotorStator main_Rotor;
 public IMyMotorStator fine_Rotor;
+public IMyCameraBlock camera_front;
+public IMyLandingGear magnetic_plate;
 public IMyTextSurfaceProvider seat;
 public IMyTextSurface seat_display_3;
 public IMyTextSurface seat_display_2;
@@ -30,6 +32,7 @@ public string crane_name;
 	public bool save_grid;
 	public string storedData;
 	public string saved_grid = "";
+	public bool pickup = false;
 
 
 public void Save() {
@@ -39,9 +42,8 @@ public void Save() {
 
 public void Main(string argument) {
 	
-
 	parseArgs(argument);
-
+	
 	seat = GridTerminalSystem.GetBlockWithName("Crane Control Seat") as IMyTextSurfaceProvider;
 	seat_display_2 = seat.GetSurface(2);
 	seat_display_3 = seat.GetSurface(3);
@@ -61,7 +63,19 @@ public void Main(string argument) {
 	piston_Out_2 = GridTerminalSystem.GetBlockWithName(crane_name + " Crane Out 2") as IMyPistonBase;
 	main_Rotor = GridTerminalSystem.GetBlockWithName(crane_name + " Crane Main Rotor") as IMyMotorStator;
 	fine_Rotor = GridTerminalSystem.GetBlockWithName(crane_name + " Crane Fine Rotor") as IMyMotorStator;
+	camera_front = GridTerminalSystem.GetBlockWithName(crane_name + " Crane Front Camera") as IMyCameraBlock;
+	magnetic_plate = GridTerminalSystem.GetBlockWithName(crane_name + " Crane Plate") as IMyLandingGear;
 	
+	
+	if (pickup == true) {
+		pickUpContainerSeenByCamera();
+		/*
+		Vector3D reference_position = piston_Up_1.GetPosition();
+		
+		
+		Echo(diff_internal.ToString());
+		*/
+	}
 	
 	if (up != "curr") {
 		double up_d = Convert.ToSingle(up);
@@ -129,6 +143,10 @@ public void Main(string argument) {
 public void parseArgs(string argument) {
 	crane = "alpha"; // TODO allow other crane names as first argument
 	
+	if (argument == "camera") {
+		pickup = true;
+	}
+		
 	var args_up = System.Text.RegularExpressions.Regex.Matches(argument, "up\\s(\\d{1,2})");
 	if (args_up.Count == 0) {
 		up = "curr";
@@ -160,6 +178,93 @@ public void parseArgs(string argument) {
 	
 }
 
+public void pickUpContainerSeenByCamera() {
+	
+	
+	camera_front.EnableRaycast = true;
+	MyDetectedEntityInfo detector_front = camera_front.Raycast(20, 0, 0);	
+	
+	Vector3D reference_position = piston_Up_1.GetPosition();
+	Vector3D target_position = detector_front.Position;
+	Vector3D diff_from_ref = Vector3D.Subtract(target_position, reference_position);
+	
+	Vector3D diff_from_ref_internal = Vector3D.TransformNormal(diff_from_ref, MatrixD.Transpose(piston_Up_1.WorldMatrix));
+	//Echo("Transposed diff: " + diff_from_ref_internal.ToString());
+	/*
+	Conversion table between manual N,S,W,E, the X,Y coords used in calculateGridCoordinates and the Z,X coordinates from transformed matrix:
+	manual 	|	interal X,Y	| worldMatrix	
+	N				Y				-Z
+	S				-Y				Z
+	E				X				X
+	W				-X				-X
+	*/
+	
+	X = diff_from_ref_internal.X;
+	Y = -diff_from_ref_internal.Z;
+	
+	// START calculateGridCoordinates
+	double X2 = Math.Pow(X,2);
+	double Y2 = Math.Pow(Y,2);
+	double hypothenuse = Math.Sqrt(X2 + Y2);
+	
+	// This hypothenuse is the distance from the center of the up piston block, to calculate how far the Out pistons should be extended in meters:
+	// Remove a block (2.5m) to get to the middle of the magnetic plate, 10m for 2x piston bases, 0.2 for the two heads.
+	out_dist = hypothenuse - 2.5 - 0.2 - 10;
+	
+	// Target angle is given by inverse cos (in radians, need to convert to degrees)
+	rotor_angle = Math.Acos(X / hypothenuse);
+	rotor_angle = rotor_angle * 180 / 3.1415; // Convert from radians to degrees
+	
+	
+	if (Y < 0) { // Turning to the negative side (south)
+		rotor_angle = -rotor_angle;
+	}
+	
+	// The main rotor is upside down, so we need to take the negative of the final calculated angle
+	rotor_angle = -rotor_angle;
+	// END calculateGridCoordinates
+	
+	moveOutPistons(out_dist);
+	moveRotor(rotor_angle);
+	
+	
+	// Fine angle rotor matching to target orientation
+	Vector3D target_facing = detector_front.Orientation.Forward;
+	Vector3D facing_diff_target = Vector3D.TransformNormal(target_facing, MatrixD.Transpose(piston_Up_1.WorldMatrix));
+	
+	double X_rot = facing_diff_target.X;
+	double Y_rot = -facing_diff_target.Z;
+	double X2_rot = Math.Pow(X_rot,2);
+	double Y2_rot = Math.Pow(Y_rot,2);
+	double hypothenuse_rot = Math.Sqrt(X2_rot + Y2_rot);
+	double pickup_target_angle = Math.Acos(X_rot / hypothenuse);
+	pickup_target_angle = pickup_target_angle * 180 / 3.1415; // Convert from radians to degrees
+	
+	
+	if (Y_rot < 0) { // Turning to the negative side (south)
+		pickup_target_angle = -pickup_target_angle;
+	}
+	
+	// Pickup angle is towards the battery, we are thinking of "forward" as the connector
+	pickup_target_angle = -pickup_target_angle;
+	double matching_fine_angle = rotor_angle + pickup_target_angle;
+	moveFineRotor(matching_fine_angle);
+	
+	// Up
+	double target_height = diff_from_ref_internal.Y;
+	//magnetic plate lower edge is approx 4.08m above center of piston Up 1. Take the Y difference from the target, plus 3.75 (center of target to top)
+	double target_up = (target_height + 3.75) - 4.08;
+	Vector3D plate_position = magnetic_plate.GetPosition();
+	Vector3D diff = Vector3D.Subtract(plate_position, reference_position);
+	Vector3D diff_internal = Vector3D.TransformNormal(diff, MatrixD.Transpose(piston_Up_1.WorldMatrix));
+	
+	Echo("Cont:" + target_height.ToString());
+	Echo("plate:" + diff_internal.Y.ToString());
+	//moveUpPistons(target_up);
+	
+	
+	
+}
 
 public void convertNWSEtoGrid(string argument) {
 	// Regex to look for N or S followed by one or two numbers, set as Y (negative if S), then look for W or E and set as X coord (negative if W)
