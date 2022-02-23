@@ -1,21 +1,8 @@
-cargoContainer alpha_1_container;
-cargoContainer alpha_2_container;
-cargoContainer alpha_3_container;
-cargoContainer alpha_4_container;
-cargoContainer alpha_5_container;
-cargoContainer alpha_6_container;
-cargoContainer alpha_7_container;
-//IMyTextPanel alpha_cargo_display;
+
 IMyTextSurfaceProvider seat;
 
 public Program() {
-	alpha_1_container = new cargoContainer(this);
-	alpha_2_container = new cargoContainer(this);
-	alpha_3_container = new cargoContainer(this);
-	alpha_4_container = new cargoContainer(this);
-	alpha_5_container = new cargoContainer(this);
-	alpha_6_container = new cargoContainer(this);
-	alpha_7_container = new cargoContainer(this);
+
 }
 
 
@@ -51,8 +38,9 @@ public string printCargoPerc(string nr) {
 	return "";
 	}
 	
-	alpha_2_container.setup(connected_grid);
-	var perc_dict = alpha_2_container.getPerc();
+	Echo(connected_grid);
+
+	var perc_dict = cargoContainer(connected_grid);
 	
 	string perc_string;
 	int  perc_dict_length = perc_dict.Count;
@@ -94,28 +82,14 @@ public class invList {
 	public double volume { get; set; }
 }
 
-public class cargoContainer {
-	Program _program;
+public Dictionary<string, double> cargoContainer(string gridName) {
 
-	public string gridName;
-	public IMyCargoContainer cont_1;
-	public IMyCargoContainer cont_2;
-	public IMyCargoContainer cont_3;
-	//private string connector;
-
-	public cargoContainer(Program program) {
-		_program = program;
-		}
-
-	public void setup(string name) {
-		gridName = name;
-		cont_1 = _program.GridTerminalSystem.GetBlockWithName("Cont_" + gridName + "_1") as IMyCargoContainer;
-		cont_2 = _program.GridTerminalSystem.GetBlockWithName("Cont_" + gridName + "_2") as IMyCargoContainer;
-		cont_3 = _program.GridTerminalSystem.GetBlockWithName("Cont_" + gridName + "_3") as IMyCargoContainer;
+		
+		IMyCargoContainer cont_1 = GridTerminalSystem.GetBlockWithName("Cont_" + gridName + "_1") as IMyCargoContainer;
+		IMyCargoContainer cont_2 = GridTerminalSystem.GetBlockWithName("Cont_" + gridName + "_2") as IMyCargoContainer;
+		IMyCargoContainer cont_3 = GridTerminalSystem.GetBlockWithName("Cont_" + gridName + "_3") as IMyCargoContainer;
 	
-	}
-
-	public Dictionary<string, double> getPerc() {
+	
 		double max_vol = Convert.ToDouble((cont_1.GetInventory().MaxVolume + cont_2.GetInventory().MaxVolume + cont_3.GetInventory().MaxVolume).ToString());
 		List<MyInventoryItem> itemList = new List<MyInventoryItem>();
 		cont_1.GetInventory().GetItems(itemList);	
@@ -144,4 +118,3 @@ public class cargoContainer {
 
 	}
 
-}
