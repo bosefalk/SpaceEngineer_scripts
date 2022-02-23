@@ -30,27 +30,35 @@ public string crane_name;
 	public string fine;
 	public string adj;
 	public bool save_grid;
-	public string storedData;
 	public string saved_grid = "";
-	public bool pickup = false;
+	public bool pickup;
+	public bool to_save;
+	public bool to_load;
+	public double saved_up_dist;
+	public double saved_out_dist;
+	public double saved_rotor_angle;
+	public double saved_fine_angle;
 
 
-public void Save() {
-	Storage = saved_grid;
+public Program() {
+	
+	saved_grid = Storage;
+
 }
+
 
 
 public void Main(string argument) {
 	
 	parseArgs(argument);
-	
+
 	seat = GridTerminalSystem.GetBlockWithName("Crane Control Seat") as IMyTextSurfaceProvider;
 	seat_display_2 = seat.GetSurface(2);
 	seat_display_3 = seat.GetSurface(3);
 	seat.GetSurface(1).WriteText("1");
 
 
-	seat.GetSurface(4).WriteText("4");
+	
 
 	
 	if (crane == "alpha") {
@@ -69,13 +77,17 @@ public void Main(string argument) {
 	
 	if (pickup == true) {
 		pickUpContainerSeenByCamera();
-		/*
-		Vector3D reference_position = piston_Up_1.GetPosition();
-		
-		
-		Echo(diff_internal.ToString());
-		*/
 	}
+	
+	if (to_save == true) {
+		toSave();
+	}
+	
+	if (to_load == true) {
+		load();
+	}
+	
+	if (pickup == false) {
 	
 	if (up != "curr") {
 		double up_d = Convert.ToSingle(up);
@@ -83,26 +95,7 @@ public void Main(string argument) {
 	}
 	
 	if (grid != "curr") {
-		if (grid == "save") {
-			getCurrentPos();
-			saved_grid = string.Join(";", curr_X, curr_Y, curr_fineDirection);
-		}
-		
-		if (grid == "clear") {
-			saved_grid = "";
-			storedData = "";
-		}
-		
-		if (grid == "load") {
-			string[] storedData = saved_grid.Split(';');
-			X = Convert.ToSingle(storedData[0]);
-			Y = Convert.ToSingle(storedData[1]);
-			fine = storedData[2];
-		
-			calculateGridCoordinates(X, Y); // sets rotor_angle and out_dist
-			moveOutPistons(out_dist);
-			moveRotor(rotor_angle);
-		}
+
 		
 		if (grid.Any(c => char.IsDigit(c))) {
 		
@@ -133,19 +126,27 @@ public void Main(string argument) {
 			moveFineRotor(fine_rotor_angle);
 		}
 	}
-	
+	}
 
 	
-	//seat_display_2.WriteText("Saved:" + "\n" + pickup_grid);
-
+	seat_display_2.WriteText("2");
+	seat.GetSurface(4).WriteText(displaySaved());
 }
 
 public void parseArgs(string argument) {
 	crane = "alpha"; // TODO allow other crane names as first argument
-	
+
 	if (argument == "camera") {
 		pickup = true;
-	}
+	} else {pickup = false;}
+	
+	if (argument == "save") {
+		to_save = true;
+	} else {to_save = false;}
+	
+	if (argument == "load") {
+		to_load = true;
+	} else {to_load = false;}
 		
 	var args_up = System.Text.RegularExpressions.Regex.Matches(argument, "up\\s(\\d{1,2})");
 	if (args_up.Count == 0) {
@@ -175,6 +176,73 @@ public void parseArgs(string argument) {
 		adj = args_adj[0].Groups[1].Value;		
 	}
 	
+	
+}
+
+public void toSave() {
+	
+
+	double currentOut = piston_Out_1.CurrentPosition;
+	currentOut = currentOut * 2; // Both pistons are moved together so always have the same extension
+	double currentUp = piston_Up_1.CurrentPosition;
+	currentUp = currentUp * 2; // Both pistons are moved together so always have the same extension
+   	double currentAngleRad = main_Rotor.Angle; 
+	double currentAngleDeg = currentAngleRad * 180 / 3.1415; 	
+	double currentFineAngleRad = fine_Rotor.Angle;
+	double currentFineAngleDeg = currentFineAngleRad * 180 / 3.1415;
+	
+	Vector3D plate_position = magnetic_plate.GetPosition();
+	Vector3D plate_coords = Vector3D.Transform(plate_position, MatrixD.Invert(piston_Up_1.WorldMatrix));
+	string approx_saved_X;
+	string approx_saved_Z;
+		if (plate_coords.X >= 0) {
+			approx_saved_X = "E " + Math.Round(plate_coords.X/2.5, 1).ToString();
+		} else {
+			approx_saved_X = "W " + Math.Round(-plate_coords.X/2.5, 1).ToString();
+		}
+		if (plate_coords.Z >= 0) {
+			approx_saved_Z = "S " + Math.Round(plate_coords.Z/2.5, 1).ToString();
+		} else {
+			approx_saved_Z = "N " + Math.Round(-plate_coords.Z/2.5, 1).ToString();
+		}
+
+	saved_grid = string.Join(";",
+        currentUp,
+		currentOut,
+		currentAngleDeg,
+		currentFineAngleDeg,
+		approx_saved_X,
+		approx_saved_Z
+    );
+}
+
+public void Save() {
+
+	Storage = saved_grid;
+
+}
+
+public void load() {
+	
+	
+	string[] storedData = saved_grid.Split(';');
+	if (storedData.Length == 6) {
+		
+		saved_up_dist = Convert.ToDouble(storedData[0]);
+		saved_out_dist = Convert.ToDouble(storedData[1]); 
+		saved_rotor_angle = Convert.ToDouble(storedData[2]);
+		saved_fine_angle = Convert.ToDouble(storedData[3]);
+		
+		moveUpPistons(saved_up_dist);
+		moveOutPistons(saved_out_dist);
+		moveRotor(saved_rotor_angle);
+		moveFineRotor(saved_fine_angle);
+		
+	}
+	
+	
+	
+
 	
 }
 
@@ -252,15 +320,8 @@ public void pickUpContainerSeenByCamera() {
 	
 	// Up
 	double target_height = diff_from_ref_internal.Y;
-	//magnetic plate lower edge is approx 4.08m above center of piston Up 1. Take the Y difference from the target, plus 3.75 (center of target to top)
-	double target_up = (target_height + 3.75) - 4.08;
-	Vector3D plate_position = magnetic_plate.GetPosition();
-	Vector3D diff = Vector3D.Subtract(plate_position, reference_position);
-	Vector3D diff_internal = Vector3D.TransformNormal(diff, MatrixD.Transpose(piston_Up_1.WorldMatrix));
-	
-	Echo("Cont:" + target_height.ToString());
-	Echo("plate:" + diff_internal.Y.ToString());
-	//moveUpPistons(target_up);
+	double target_up_rot = target_height -0.86;
+	moveUpPistons(Convert.ToSingle(target_up_rot));
 	
 	
 	
@@ -416,7 +477,7 @@ public void moveUpPistons(double targetUp) {
    double currentUp = piston_Up_1.CurrentPosition;
    currentUp = currentUp * 2; // Both pistons are moved together so always have the same extension
 	
-	if (currentUp < targetUp - 0.1) {
+	if (currentUp < targetUp - 0.01) {
 		
 		piston_Up_1.MaxLimit = Convert.ToSingle(targetUp / 2);
 		piston_Up_2.MaxLimit = Convert.ToSingle(targetUp / 2);
@@ -425,7 +486,7 @@ public void moveUpPistons(double targetUp) {
 		piston_Up_1.Extend();
 		piston_Up_2.Extend();
 	}
-	if (currentUp > targetUp + 0.1) {
+	if (currentUp > targetUp + 0.01) {
 		
 		piston_Up_1.MinLimit = Convert.ToSingle(targetUp / 2);
 		piston_Up_2.MinLimit = Convert.ToSingle(targetUp / 2);
@@ -501,3 +562,20 @@ public void moveFineRotor(double targetAngle) {
 	}
 }
 
+public string displaySaved() {
+	
+	string[] storedData = saved_grid.Split(';');
+	if (storedData.Length != 6) {
+		return("Saved:" + "\n" + 
+		"No saved grid");
+	} else {
+		
+		saved_up_dist = Convert.ToDouble(storedData[0]);
+		
+		return("Saved:" + "\n" + 
+		storedData[5] + "\n" + 
+		storedData[4] + "\n" +
+		"Up " + Math.Round(saved_up_dist, 1).ToString());		
+	}
+	
+}
