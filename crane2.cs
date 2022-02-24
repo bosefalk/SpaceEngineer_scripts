@@ -11,6 +11,7 @@ public IMyTextSurface seat_display_3;
 public IMyTextSurface seat_display_2;
 public IMyTextSurface seat_display_1;
 public IMyTextSurface seat_display_4;
+public IMyProgrammableBlock CraneSupport;
 
 
 // global variables
@@ -38,6 +39,8 @@ public string crane_name;
 	public double saved_out_dist;
 	public double saved_rotor_angle;
 	public double saved_fine_angle;
+	public bool rover;
+	public bool roverhigh;
 
 
 public Program() {
@@ -56,7 +59,7 @@ public void Main(string argument) {
 	seat_display_2 = seat.GetSurface(2);
 	seat_display_3 = seat.GetSurface(3);
 	seat.GetSurface(1).WriteText("1");
-
+	CraneSupport = GridTerminalSystem.GetBlockWithName("CraneSupport Program") as IMyProgrammableBlock;
 
 	
 
@@ -77,6 +80,14 @@ public void Main(string argument) {
 	
 	if (pickup == true) {
 		pickUpContainerSeenByCamera();
+	}
+	
+	if (rover == true) {
+		if (roverhigh == false) {
+		positionRoverConnector("rover");
+		} else {
+			positionRoverConnector("roverhigh");
+		}
 	}
 	
 	if (to_save == true) {
@@ -139,6 +150,14 @@ public void parseArgs(string argument) {
 	if (argument == "camera") {
 		pickup = true;
 	} else {pickup = false;}
+	
+	if (argument == "rover" | argument == "roverhigh") {
+		rover = true;
+		if (argument == "roverhigh") {
+			roverhigh = true;
+	} else {roverhigh = false;}
+	} else {rover = false;}
+	
 	
 	if (argument == "save") {
 		to_save = true;
@@ -251,13 +270,35 @@ public void pickUpContainerSeenByCamera() {
 	
 	camera_front.EnableRaycast = true;
 	MyDetectedEntityInfo detector_front = camera_front.Raycast(20, 0, 0);	
+	Vector3D detected_position = detector_front.Position;
+	Vector3D detected_facing = detector_front.Orientation.Forward;
 	
-	Vector3D reference_position = piston_Up_1.GetPosition();
-	Vector3D target_position = detector_front.Position;
-	Vector3D diff_from_ref = Vector3D.Subtract(target_position, reference_position);
+	moveToTargetGrid(detected_position, detected_facing, "container");
+}
+
+public void positionRoverConnector(string roverqualifier) {
 	
-	Vector3D diff_from_ref_internal = Vector3D.TransformNormal(diff_from_ref, MatrixD.Transpose(piston_Up_1.WorldMatrix));
-	//Echo("Transposed diff: " + diff_from_ref_internal.ToString());
+	// Parse position message from rover, saved in PB CustomData
+	string[] msg = CraneSupport.CustomData.Split(';');
+	Vector3D connector_pos = new Vector3D(Convert.ToDouble(msg[0]),
+	Convert.ToDouble(msg[1]),
+	Convert.ToDouble(msg[2]));	
+	
+	Vector3D connector_forward = new Vector3D(Convert.ToDouble(msg[3]),
+	Convert.ToDouble(msg[4]),
+	Convert.ToDouble(msg[5]));
+	if (roverqualifier == "roverhigh") {
+	moveToTargetGrid(connector_pos, connector_forward, "roverhigh");
+	} else {
+		moveToTargetGrid(connector_pos, connector_forward, "rover");
+	}
+}
+
+
+
+
+public void moveToTargetGrid(Vector3D target_pos, Vector3D target_orientation, string argument) {
+	
 	/*
 	Conversion table between manual N,S,W,E, the X,Y coords used in calculateGridCoordinates and the Z,X coordinates from transformed matrix:
 	manual 	|	interal X,Y	| worldMatrix	
@@ -267,6 +308,17 @@ public void pickUpContainerSeenByCamera() {
 	W				-X				-X
 	*/
 	
+	// X and Y location
+	Vector3D reference_position = piston_Up_1.GetPosition();
+	Vector3D original_target_position = target_pos;
+	if (argument == "rover" | argument == "roverhigh") {
+		Vector3D offset_from_connector = Vector3D.Multiply(target_orientation, 7.5);
+		target_pos = Vector3D.Add(target_pos, offset_from_connector);
+	}
+	
+	Vector3D diff_from_ref = Vector3D.Subtract(target_pos, reference_position);
+	Vector3D diff_from_ref_internal = Vector3D.TransformNormal(diff_from_ref, MatrixD.Transpose(piston_Up_1.WorldMatrix));
+		
 	X = diff_from_ref_internal.X;
 	Y = -diff_from_ref_internal.Z;
 	
@@ -295,10 +347,9 @@ public void pickUpContainerSeenByCamera() {
 	moveOutPistons(out_dist);
 	moveRotor(rotor_angle);
 	
-	
 	// Fine angle rotor matching to target orientation
-	Vector3D target_facing = detector_front.Orientation.Forward;
-	Vector3D facing_diff_target = Vector3D.TransformNormal(target_facing, MatrixD.Transpose(piston_Up_1.WorldMatrix));
+	
+	Vector3D facing_diff_target = Vector3D.TransformNormal(target_orientation, MatrixD.Transpose(piston_Up_1.WorldMatrix));
 	
 	double X_rot = facing_diff_target.X;
 	double Y_rot = -facing_diff_target.Z;
@@ -308,19 +359,33 @@ public void pickUpContainerSeenByCamera() {
 	double pickup_target_angle = Math.Acos(X_rot / hypothenuse);
 	pickup_target_angle = pickup_target_angle * 180 / 3.1415; // Convert from radians to degrees
 	
-	
+	Echo(X_rot.ToString());
+	Echo(Y_rot.ToString());
 	if (Y_rot < 0) { // Turning to the negative side (south)
 		pickup_target_angle = -pickup_target_angle;
 	}
+	if (argument == "rover" | argument == "roverhigh") {
+		pickup_target_angle = pickup_target_angle - 90;
+	}
 	
-	// Pickup angle is towards the battery, we are thinking of "forward" as the connector
+	// Pickup angle is towards the battery / the direction the connector is facing on the rover, we are thinking of "forward" as the connector on the container
 	pickup_target_angle = -pickup_target_angle;
+	
 	double matching_fine_angle = rotor_angle + pickup_target_angle;
 	moveFineRotor(matching_fine_angle);
 	
+	
 	// Up
+	Vector3D diff_from_ref_up = Vector3D.Subtract(original_target_position, reference_position);
 	double target_height = diff_from_ref_internal.Y;
 	double target_up_rot = target_height -0.86;
+	if (argument == "rover) {
+		target_up_rot = target_height -1;
+	}
+	if (argument == "roverhigh") {	
+		target_up_rot = target_height + 10;
+	}
+	
 	moveUpPistons(Convert.ToSingle(target_up_rot));
 	
 	
