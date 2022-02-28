@@ -270,10 +270,15 @@ public void pickUpContainerSeenByCamera() {
 	
 	camera_front.EnableRaycast = true;
 	MyDetectedEntityInfo detector_front = camera_front.Raycast(20, 0, 0);	
+	
+	
 	Vector3D detected_position = detector_front.Position;
 	Vector3D detected_facing = detector_front.Orientation.Forward;
 	
+	Echo(detector_front.Name);
+	
 	moveToTargetGrid(detected_position, detected_facing, "container");
+	
 }
 
 public void positionRoverConnector(string roverqualifier) {
@@ -344,6 +349,8 @@ public void moveToTargetGrid(Vector3D target_pos, Vector3D target_orientation, s
 	rotor_angle = -rotor_angle;
 	// END calculateGridCoordinates
 	
+	Echo("out_dist" + out_dist.ToString());
+	Echo("rotor_angle" + rotor_angle.ToString());
 	moveOutPistons(out_dist);
 	moveRotor(rotor_angle);
 	
@@ -359,8 +366,8 @@ public void moveToTargetGrid(Vector3D target_pos, Vector3D target_orientation, s
 	double pickup_target_angle = Math.Acos(X_rot / hypothenuse);
 	pickup_target_angle = pickup_target_angle * 180 / 3.1415; // Convert from radians to degrees
 	
-	Echo(X_rot.ToString());
-	Echo(Y_rot.ToString());
+	Echo("X_rot" + X_rot.ToString());
+	Echo("Y_rot" + Y_rot.ToString());
 	if (Y_rot < 0) { // Turning to the negative side (south)
 		pickup_target_angle = -pickup_target_angle;
 	}
@@ -368,8 +375,6 @@ public void moveToTargetGrid(Vector3D target_pos, Vector3D target_orientation, s
 		pickup_target_angle = pickup_target_angle - 90;
 	}
 	
-	// Pickup angle is towards the battery / the direction the connector is facing on the rover, we are thinking of "forward" as the connector on the container
-	pickup_target_angle = -pickup_target_angle;
 	
 	double matching_fine_angle = rotor_angle + pickup_target_angle;
 	moveFineRotor(matching_fine_angle);
@@ -379,13 +384,14 @@ public void moveToTargetGrid(Vector3D target_pos, Vector3D target_orientation, s
 	Vector3D diff_from_ref_up = Vector3D.Subtract(original_target_position, reference_position);
 	double target_height = diff_from_ref_internal.Y;
 	double target_up_rot = target_height -0.86;
-	if (argument == "rover) {
+	if (argument == "rover") {
 		target_up_rot = target_height -1;
 	}
 	if (argument == "roverhigh") {	
 		target_up_rot = target_height + 10;
 	}
 	
+	Echo("targetUp" + target_up_rot.ToString());
 	moveUpPistons(Convert.ToSingle(target_up_rot));
 	
 	
